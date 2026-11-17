@@ -1,0 +1,5 @@
+kit/
+work/
+*.tar.gz
+*.tgz
+node_modules/

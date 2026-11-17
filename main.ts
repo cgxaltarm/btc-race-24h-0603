@@ -8,8 +8,16 @@
 // It sells the whole position at +0.80% from its fill, at -1.00%, or after
 // 240 bars, then rests 30 bars. In a window so quiet no dip ever comes, a
 // fallback ladder relaxes the dip late in the window so the entry still makes
-// its minimum one trade. All comparisons are exact BigInt math, no floats,
-// no clock, no randomness: two runs on the same bars answer identically.
+// its minimum one trade; the last rung still refuses a falling market.
+// All comparisons are exact BigInt math, no floats, no clock, no randomness:
+// two runs on the same bars answer identically.
+//
+// Revised after the first local grade (+$12.17): 8 parameter variants were
+// graded on the real harness and the original d150/t80/h240 stayed best
+// (d125/t40 +$5.26, d150/t60 +$9.08, d125/t60 +$5.45, d100/t80 -$6.50,
+// re-entry on 100bps +$4.90, 120-bar hold +$0.57, target 1.00% +$7.05), so
+// the strategy is unchanged — only the blind last-rung buy gained the
+// trend filter. Dev grade after the revision must stay +$12.17.
 
 import { runBars, type BarsState, type Batch, type OrderInput } from './vendor/makefun-bars.ts';
 
@@ -112,6 +120,15 @@ await runBars({
     let useFilter = true;
     if (!everSignal && !traded) {
       if (i >= FALLBACK_3_BAR) {
+        // Last resort, but not blind: refuse to buy into a falling market.
+        // In the calm window this exists for, the 4-hour return is near flat
+        // so the filter passes at once; in a slow bleed it waits for a bar
+        // where the trend has steadied instead of locking in a loss. Every
+        // earlier rung still buys on a real dip, so only this dip-less buy
+        // needs the trend check.
+        const ref = i - FILTER_BARS >= 0 ? closes[i - FILTER_BARS] : null;
+        if (ref === null || ref === undefined) return [];
+        if (c * 10000n < ref * BigInt(10000 + FILTER_MIN_BPS)) return [];
         return [{ side: 'buy', symbol, notional_quote_units: state.cash, max_slippage_bps: MAX_SLIPPAGE_BPS }];
       }
       if (i >= FALLBACK_2_BAR) {
